@@ -8,6 +8,7 @@ import (
 	"github.com/imrenagicom/demo-app/internal/db"
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 )
 
 var (
@@ -77,6 +78,7 @@ func (s *Store) FindAllCourse(ctx context.Context, opts ...ListOption) ([]Course
 }
 
 func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) {
+	logger := zerolog.Ctx(ctx)
 	c := Course{}
 	sb := sq.StatementBuilder.RunWith(s.dbCache)
 	getConcert := sb.
@@ -87,6 +89,7 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 	if err := getConcert.QueryRowContext(ctx).Scan(
 		&c.ID, &c.Name, &c.Slug, &c.Description, &c.Status, &c.PublishedAt,
 	); err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		// if errors.Is(err, sql.ErrNoRows) {
 		// 	return nil, db.ErrResourceNotFound{Message: fmt.Sprintf("course with id %s not found", id)}
 		// }
@@ -184,6 +187,7 @@ func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...Find
 }
 
 func (c *Store) FindCourseBatchByIDAndCourseID(ctx context.Context, batchID, courseID string, opts ...FindOption) (*Batch, error) {
+	logger := zerolog.Ctx(ctx)
 	options := &FindOptions{}
 	for _, o := range opts {
 		o(options)
@@ -206,12 +210,14 @@ func (c *Store) FindCourseBatchByIDAndCourseID(ctx context.Context, batchID, cou
 	err := selectBatch.QueryRowContext(ctx).
 		Scan(&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version, &b.Status)
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return nil, err
 	}
 	return &b, nil
 }
 
 func (c *Store) UpdateBatchAvailableSeats(ctx context.Context, b *Batch, opts ...UpdateOption) error {
+	logger := zerolog.Ctx(ctx)
 	options := &UpdateOptions{}
 	for _, o := range opts {
 		o(options)
@@ -234,11 +240,13 @@ func (c *Store) UpdateBatchAvailableSeats(ctx context.Context, b *Batch, opts ..
 
 	res, err := updateSeat.ExecContext(ctx)
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 
@@ -249,7 +257,7 @@ func (c *Store) UpdateBatchAvailableSeats(ctx context.Context, b *Batch, opts ..
 	return nil
 }
 
-func (c *Store) FindAllBatchesByCourseID(ctx context.Context, courseID string, opts ...ListOption) ([]Batch, string, error) {	
+func (c *Store) FindAllBatchesByCourseID(ctx context.Context, courseID string, opts ...ListOption) ([]Batch, string, error) {
 	options := &ListOptions{
 		Limit: 10,
 	}

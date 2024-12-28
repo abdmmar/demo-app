@@ -10,6 +10,7 @@ import (
 	"github.com/imrenagicom/demo-app/internal/db"
 	v1 "github.com/imrenagicom/demo-app/pkg/apiclient/course/v1"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -127,59 +128,71 @@ func (s Service) GetBooking(ctx context.Context, req *v1.GetBookingRequest) (*Bo
 }
 
 func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest) error {
+	logger := zerolog.Ctx(ctx)
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 
 	b, err := s.bookingStore.FindBookingByID(ctx, req.GetBooking(), WithDisableCache(), WithFindTx(tx))
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	if err = b.Expire(ctx); err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	ctx, _ = context.WithTimeout(ctx, 5*time.Millisecond)
 	if err = s.bookingStore.UpdateBookingStatus(ctx, b, WithUpdateTx(tx)); err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	if err = s.releaseBooking(ctx, tx, b, 0); err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	if err = tx.Commit(); err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 	return nil
 }
 
 func (s Service) releaseBooking(ctx context.Context, tx *sqlx.Tx, b *Booking, retryCount int) error {
+	logger := zerolog.Ctx(ctx)
 	if retryCount > maxReleaseAttemptRetry {
 		return ErrReleaseMaxRetryExceeded
 	}
 
 	batch, err := s.catalogStore.FindCourseBatchByIDAndCourseID(ctx, b.Batch.ID.String(), b.Course.ID.String(), catalog.WithFindTx(tx))
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 
 	err = batch.Allocate(ctx, 1)
 	if err != nil {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 
 	err = s.catalogStore.UpdateBatchAvailableSeats(ctx, batch, catalog.WithUpdateTx(tx))
 	if err != nil && !errors.Is(err, db.ErrNoRowUpdated) {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return err
 	}
 	if errors.Is(err, db.ErrNoRowUpdated) {
+		logger.Error().Ctx(ctx).Msg(err.Error())
 		return s.releaseBooking(ctx, tx, b, retryCount+1)
 	}
 	return nil

@@ -5,6 +5,7 @@ import (
 
 	"github.com/imrenagicom/demo-app/course/catalog"
 	v1 "github.com/imrenagicom/demo-app/pkg/apiclient/course/v1"
+	"github.com/rs/zerolog"
 )
 
 type Service interface {
@@ -43,8 +44,10 @@ func (s Server) ListCourses(ctx context.Context, req *v1.ListCoursesRequest) (*v
 }
 
 func (s Server) GetCourse(ctx context.Context, req *v1.GetCourseRequest) (*v1.Course, error) {
+	logger := zerolog.Ctx(ctx)
 	course, err := s.service.GetCourse(ctx, req)
 	if err != nil {
+		logger.Error().Msg(err.Error())
 		return nil, err
 	}
 	return course.ApiV1(), nil

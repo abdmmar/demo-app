@@ -5,6 +5,8 @@ import (
 
 	"github.com/imrenagicom/demo-app/course/booking"
 	v1 "github.com/imrenagicom/demo-app/pkg/apiclient/course/v1"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 func New(svc Service) *Server {
@@ -52,16 +54,26 @@ func (s Server) GetBooking(ctx context.Context, req *v1.GetBookingRequest) (*v1.
 }
 
 func (s Server) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest) (*v1.ExpireBookingResponse, error) {
+	requestID, ok := ctx.Value("request_id").(string)
+	if !ok || requestID == "" {
+		log.Warn().Msg("Request ID not found in context")
+		requestID = "unknown" // Fallback value
+	}
+
 	err := s.service.ExpireBooking(ctx, req)
 	if err != nil {
+		log.Error().Str("request_id", requestID).Msg(err.Error())
 		return nil, err
 	}
 	return &v1.ExpireBookingResponse{}, nil
 }
 
 func (s Server) ListBookings(ctx context.Context, req *v1.ListBookingsRequest) (*v1.ListBookingsResponse, error) {
+	logger := zerolog.Ctx(ctx)
+
 	bookings, _, err := s.service.ListBookings(ctx, req)
 	if err != nil {
+		logger.Error().Msg(err.Error())
 		return nil, err
 	}
 	var bks []*v1.Booking
