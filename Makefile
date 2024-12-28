@@ -48,6 +48,7 @@ generate: generate/proto generate/swagger-ui
 	go generate ./...
 
 install/protoc:
+	go get google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 	go install \
             github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway \
             github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2 \
