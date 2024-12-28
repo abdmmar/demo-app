@@ -14,6 +14,7 @@ import (
 	bookingsrv "github.com/imrenagicom/demo-app/course/server/booking"
 	catalogsrv "github.com/imrenagicom/demo-app/course/server/catalog"
 	"github.com/imrenagicom/demo-app/internal/config"
+	grpcUtil "github.com/imrenagicom/demo-app/internal/grpc"
 	"github.com/imrenagicom/demo-app/internal/util"
 	v1 "github.com/imrenagicom/demo-app/pkg/apiclient/course/v1"
 
@@ -116,7 +117,12 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 func (s *Server) newGRPCServer(ctx context.Context) *grpc.Server {
-	opts := []grpc.ServerOption{}
+	opts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(
+			grpcUtil.UnaryServerAppLoggerInterceptor(),
+			grpcUtil.UnaryServerGRPCLoggerInterceptor(),
+		),
+	}
 	grpcServer := grpc.NewServer(opts...)
 	bookingSrv := bookingsrv.New(s.bookingService)
 	catalogSrv := catalogsrv.New(s.catalogService)
@@ -147,7 +153,7 @@ func (s *Server) newHTTPServer(ctx context.Context) *http.Server {
 	mux.PathPrefix("/debug/").Handler(http.DefaultServeMux)
 
 	api := mux.PathPrefix("/api/course").Subrouter()
-	api.Use() // TODO add required middleware for /api here
+	api.Use()
 	api.PathPrefix("/v1").Handler(gwmux)
 
 	sh := http.StripPrefix("/swagger/",
