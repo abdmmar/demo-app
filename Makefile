@@ -71,3 +71,10 @@ course/server:
 .PHONY: course/seed
 course/seed:
 	go run cmd/course/main.go server seed --config course/conf/server.yaml
+
+locust/bootstrap:
+	cd scripts/locust && virtualenv .venv
+
+locust/run:
+	cd scripts/locust && .venv/bin/locust -f locustfiles --class-picker --modern-ui -H http://localhost:8800
+
