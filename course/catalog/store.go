@@ -2,9 +2,13 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 	"github.com/imrenagicom/demo-app/internal/db"
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
@@ -79,6 +83,13 @@ func (s *Store) FindAllCourse(ctx context.Context, opts ...ListOption) ([]Course
 
 func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "courses").Str("course_id", id)
+
+	if _, err := uuid.Parse(id); err != nil {
+		errLog.Str("status", "400").Msgf("Invalid course id: %v", err)
+		return nil, errors.New("invalid id")
+	}
+
 	c := Course{}
 	sb := sq.StatementBuilder.RunWith(s.dbCache)
 	getConcert := sb.
@@ -89,10 +100,12 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 	if err := getConcert.QueryRowContext(ctx).Scan(
 		&c.ID, &c.Name, &c.Slug, &c.Description, &c.Status, &c.PublishedAt,
 	); err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
-		// if errors.Is(err, sql.ErrNoRows) {
-		// 	return nil, db.ErrResourceNotFound{Message: fmt.Sprintf("course with id %s not found", id)}
-		// }
+		if errors.Is(err, sql.ErrNoRows) {
+			errLog.Str("status", "404").Msgf("Course not found: %v", err)
+			return nil, db.ErrResourceNotFound{Message: fmt.Sprintf("course with id %s not found", id)}
+		}
+
+		errLog.Str("status", "500").Msgf("Failed to fetch course: %v", err)
 		return nil, err
 	}
 
@@ -104,6 +117,17 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 		PlaceholderFormat(sq.Dollar)
 	rows, err := selectBatches.QueryContext(ctx)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			errLog.Str("status", "404").Msgf("No batches found for course ID %v: %v", c.ID, err)
+			return nil, db.ErrResourceNotFound{Message: fmt.Sprintf("no batches found for course with ID %s", c.ID)}
+		}
+
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			errLog.Str("status", "503").Msgf("Query execution timed out or was canceled: %v", err)
+			return nil, fmt.Errorf("query for course batches timed out or was canceled for course ID %s: %v", c.ID, err)
+		}
+
+		errLog.Str("status", "500").Msgf("Failed to fetch course batches: %v", err)
 		return nil, err
 	}
 	for rows.Next() {
@@ -111,6 +135,7 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 		if err := rows.Scan(
 			&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version,
 		); err != nil {
+			errLog.Str("status", "500").Msgf("Error scanning row for course batch: %v", err)
 			return nil, err
 		}
 		batches = append(batches, b)
@@ -159,6 +184,7 @@ func (c *Store) CreateCourse(ctx context.Context, course *Course) error {
 }
 
 func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...FindOption) (*Batch, error) {
+	logger := zerolog.Ctx(ctx)
 	options := &FindOptions{}
 	for _, o := range opts {
 		o(options)
@@ -181,6 +207,14 @@ func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...Find
 	err := selectBatch.QueryRowContext(ctx).
 		Scan(&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version, &b.Status)
 	if err != nil {
+		errLog := logger.Error().Ctx(ctx).Str("domain", "courses").Str("batch_id", id)
+
+		if errors.Is(err, sql.ErrNoRows) {
+			errLog.Str("status", "404").Msgf("Course with batch id not found: %v", err)
+			return nil, db.ErrResourceNotFound{Message: fmt.Sprintf("course with batch id %s not found", id)}
+		}
+
+		errLog.Str("status", "500").Msgf("Failed to fetch course: %v", err)
 		return nil, err
 	}
 	return &b, nil
