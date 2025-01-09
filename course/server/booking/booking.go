@@ -54,10 +54,12 @@ func (s Server) GetBooking(ctx context.Context, req *v1.GetBookingRequest) (*v1.
 }
 
 func (s Server) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest) (*v1.ExpireBookingResponse, error) {
+	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Str("domain", "booking_handler")
 	requestID, ok := ctx.Value("request_id").(string)
 	if !ok || requestID == "" {
-		log.Warn().Msg("Request ID not found in context")
-		requestID = "unknown" // Fallback value
+		errLog.Str("status", "400").Msgf("request_id is empty")
+		return nil, booking.ErrBookingAlreadyCompleted
 	}
 
 	err := s.service.ExpireBooking(ctx, req)
@@ -65,6 +67,7 @@ func (s Server) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest)
 		log.Error().Str("request_id", requestID).Msg(err.Error())
 		return nil, err
 	}
+
 	return &v1.ExpireBookingResponse{}, nil
 }
 

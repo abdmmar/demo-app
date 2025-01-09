@@ -129,40 +129,41 @@ func (s Service) GetBooking(ctx context.Context, req *v1.GetBookingRequest) (*Bo
 
 func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest) error {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "booking_service")
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("error begin transaction %s", err.Error())
 		return err
 	}
 
 	b, err := s.bookingStore.FindBookingByID(ctx, req.GetBooking(), WithDisableCache(), WithFindTx(tx))
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("error find booking by id %s", err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	if err = b.Expire(ctx); err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("booking already expired %s", err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	ctx, _ = context.WithTimeout(ctx, 5*time.Millisecond)
 	if err = s.bookingStore.UpdateBookingStatus(ctx, b, WithUpdateTx(tx)); err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("failed update booking %s", err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	if err = s.releaseBooking(ctx, tx, b, 0); err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("failed to release booking %s", err.Error())
 		tx.Rollback()
 		return err
 	}
 
 	if err = tx.Commit(); err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("failed to finish transaction %s", err.Error())
 		return err
 	}
 	return nil
@@ -170,29 +171,31 @@ func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest
 
 func (s Service) releaseBooking(ctx context.Context, tx *sqlx.Tx, b *Booking, retryCount int) error {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Str("domain", "release_booking")
+
 	if retryCount > maxReleaseAttemptRetry {
 		return ErrReleaseMaxRetryExceeded
 	}
 
 	batch, err := s.catalogStore.FindCourseBatchByIDAndCourseID(ctx, b.Batch.ID.String(), b.Course.ID.String(), catalog.WithFindTx(tx))
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("cannot found course by batch id and course id %s", err.Error())
 		return err
 	}
 
 	err = batch.Allocate(ctx, 1)
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("failed allocate batch %s", err.Error())
 		return err
 	}
 
 	err = s.catalogStore.UpdateBatchAvailableSeats(ctx, batch, catalog.WithUpdateTx(tx))
 	if err != nil && !errors.Is(err, db.ErrNoRowUpdated) {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("failed update batch available seats %s", err.Error())
 		return err
 	}
 	if errors.Is(err, db.ErrNoRowUpdated) {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("err no update %s", err.Error())
 		return s.releaseBooking(ctx, tx, b, retryCount+1)
 	}
 	return nil

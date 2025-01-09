@@ -107,6 +107,7 @@ func (s *Store) FindBookingByID(ctx context.Context, ID string, opts ...FindOpti
 
 func (s *Store) UpdateBookingStatus(ctx context.Context, booking *Booking, opts ...UpdateOption) error {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "booking").Str("booking_id", booking.ID.String())
 	options := &UpdateOptions{}
 	for _, o := range opts {
 		o(options)
@@ -127,18 +128,18 @@ func (s *Store) UpdateBookingStatus(ctx context.Context, booking *Booking, opts 
 		PlaceholderFormat(sq.Dollar)
 	res, err := updateBooking.ExecContext(ctx)
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("failed update booking %s", err.Error())
 		return err
 	}
 
 	n, err := res.RowsAffected()
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("no booking row affected %s", err.Error())
 		return err
 	}
 
 	if n == 0 {
-		logger.Error().Ctx(ctx).Msg(fmt.Sprintf("No Row Updated for Booking ID: %s", booking.ID))
+		errLog.Msg(fmt.Sprintf("No Row Updated for Booking ID: %s", booking.ID))
 		return db.ErrNoRowUpdated
 	}
 	return nil
@@ -178,6 +179,7 @@ func (s *Store) UpdateBookingPayment(ctx context.Context, booking *Booking, opts
 
 func (s *Store) FindAllBookings(ctx context.Context, opts ...ListOption) ([]Booking, string, error) {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "booking")
 	options := &ListOptions{
 		Limit: 5,
 	}
@@ -213,7 +215,7 @@ func (s *Store) FindAllBookings(ctx context.Context, opts ...ListOption) ([]Book
 
 	rows, err := query.QueryContext(ctx)
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Str("status", "500").Msgf("bookings not found %s", err.Error())
 		return nil, "", err
 	}
 
@@ -229,6 +231,7 @@ func (s *Store) FindAllBookings(ctx context.Context, opts ...ListOption) ([]Book
 				&b.ReservedAt, &b.ExpiredAt, &b.PaidAt, &b.CreatedAt, &b.UpdatedAt, &b.Version,
 				&b.Customer.Name, &b.Customer.Email, &b.Customer.Phone, &b.InvoiceNumber, &b.PaymentType,
 				&b.Course.Name, &b.Course.Slug, &b.Batch.Name, &b.Batch.StartDate, &b.Batch.EndDate); err != nil {
+			errLog.Str("status", "500").Msgf("failed parse booking %s", err.Error())
 			return nil, "", err
 		}
 		bookings = append(bookings, b)

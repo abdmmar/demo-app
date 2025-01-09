@@ -26,8 +26,11 @@ type Server struct {
 }
 
 func (s Server) ListCourses(ctx context.Context, req *v1.ListCoursesRequest) (*v1.ListCoursesResponse, error) {
+	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "courses_service")
 	courses, nextPage, err := s.service.ListCourse(ctx, req)
 	if err != nil {
+		errLog.Str("status", "500").Msgf("Failed to fetch courses from store: %v", err)
 		return nil, err
 	}
 
@@ -45,10 +48,18 @@ func (s Server) ListCourses(ctx context.Context, req *v1.ListCoursesRequest) (*v
 
 func (s Server) GetCourse(ctx context.Context, req *v1.GetCourseRequest) (*v1.Course, error) {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "courses_service")
 	course, err := s.service.GetCourse(ctx, req)
+
+	if course == nil {
+		errLog.Str("status", "404").Msgf("course not found %s", req.GetCourse())
+		return &v1.Course{}, nil
+	}
+
 	if err != nil {
-		logger.Error().Msg(err.Error())
+		errLog.Str("status", "500").Msg(err.Error())
 		return nil, err
 	}
+
 	return course.ApiV1(), nil
 }

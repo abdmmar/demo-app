@@ -38,6 +38,8 @@ func (s *Store) Clear() error {
 }
 
 func (s *Store) FindAllCourse(ctx context.Context, opts ...ListOption) ([]Course, string, error) {
+	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Ctx(ctx).Str("domain", "courses")
 	options := &ListOptions{
 		Limit: 10,
 	}
@@ -60,18 +62,21 @@ func (s *Store) FindAllCourse(ctx context.Context, opts ...ListOption) ([]Course
 
 	rows, err := selectCourses.QueryContext(ctx)
 	if err != nil {
+		errLog.Str("status", "500").Msgf("Failed to fetch courses: %v", err)
 		return nil, "", err
 	}
 
 	for rows.Next() {
 		var c Course
 		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.Description, &c.Status, &c.PublishedAt); err != nil {
+			errLog.Str("status", "500").Msgf("Error scanning row for course batch: %v", err)
 			return nil, "", err
 		}
 
 		if options.Preload {
 			batches, _, err := s.FindAllBatchesByCourseID(ctx, c.ID.String())
 			if err != nil {
+				errLog.Str("status", "500").Msgf("Failed to fetch course batches: %v", err)
 				return nil, "", err
 			}
 			c.Batches = batches
@@ -87,7 +92,7 @@ func (s *Store) FindCourseByID(ctx context.Context, id string) (*Course, error) 
 
 	if _, err := uuid.Parse(id); err != nil {
 		errLog.Str("status", "400").Msgf("Invalid course id: %v", err)
-		return nil, errors.New("invalid id")
+		return nil, ErrInvalidStateChange{Message: "Invalid id"}
 	}
 
 	c := Course{}
@@ -222,6 +227,7 @@ func (c *Store) FindCourseBatchByID(ctx context.Context, id string, opts ...Find
 
 func (c *Store) FindCourseBatchByIDAndCourseID(ctx context.Context, batchID, courseID string, opts ...FindOption) (*Batch, error) {
 	logger := zerolog.Ctx(ctx)
+	errLog := logger.Error().Str("domain", "booking").Str("batch_id", batchID).Str("course_id", courseID)
 	options := &FindOptions{}
 	for _, o := range opts {
 		o(options)
@@ -244,7 +250,7 @@ func (c *Store) FindCourseBatchByIDAndCourseID(ctx context.Context, batchID, cou
 	err := selectBatch.QueryRowContext(ctx).
 		Scan(&b.ID, &b.Name, &b.MaxSeats, &b.AvailableSeats, &b.Price, &b.Currency, &b.StartDate, &b.EndDate, &b.Version, &b.Status)
 	if err != nil {
-		logger.Error().Ctx(ctx).Msg(err.Error())
+		errLog.Msgf("failed get course by batch id and course id %s", err.Error())
 		return nil, err
 	}
 	return &b, nil
