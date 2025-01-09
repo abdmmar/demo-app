@@ -149,7 +149,7 @@ func (s Service) ExpireBooking(ctx context.Context, req *v1.ExpireBookingRequest
 		return err
 	}
 
-	ctx, _ = context.WithTimeout(ctx, 5*time.Millisecond)
+	ctx, _ = context.WithTimeout(ctx, ttl(5))
 	if err = s.bookingStore.UpdateBookingStatus(ctx, b, WithUpdateTx(tx)); err != nil {
 		errLog.Str("status", "500").Msgf("failed update booking %s", err.Error())
 		tx.Rollback()
